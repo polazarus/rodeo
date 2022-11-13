@@ -1,0 +1,20 @@
+[package]
+name = "rodeo"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Fast dropping arena based on bumpalo"
+authors = ["polazarus"]
+categories = ["memory-management", "rust-patterns"]
+keywords = ["arena", "allocation"]
+readme = "./README.md"
+repository = "https://github.com/polazarus/rodeo"
+
+[features]
+default = ["bumpalo"]
+
+[dependencies]
+bumpalo = { version = "3.11.1", optional = true }
+
+[dev-dependencies]
+proptest = "1.0.0"
