@@ -5,8 +5,8 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Fast dropping arena based on bumpalo"
 authors = ["polazarus"]
-categories = ["memory-management", "rust-patterns"]
-keywords = ["arena", "allocation"]
+categories = ["memory-management", "rust-patterns", "no-std"]
+keywords = ["dropping", "arena", "allocation", "bumpalo"]
 readme = "./README.md"
 repository = "https://github.com/polazarus/rodeo"
 
