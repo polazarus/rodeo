@@ -1,5 +1,7 @@
 //! Fast dropping arena based on _bumpalo_.
 
+#![no_std]
+
 #![warn(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::pedantic)]
 #![warn(clippy::nursery)]
@@ -9,22 +11,31 @@ use core::alloc::Layout;
 use core::cell::Cell;
 use core::ptr::{addr_of_mut, NonNull};
 
-#[cfg(feature = "bumpalo")]
-use bumpalo::{AllocErr, Bump};
+extern crate alloc;
 
+#[cfg(feature = "bumpalo")]
+pub mod bumpalo;
+
+pub mod fallback;
+
+#[cfg(test)]
+mod tests;
+
+/// Arena allocator trait.
+///
+/// Arena allocator do not have to provide a deallocation method.
+/// Everything should be deallocated when the arena is dropped.
 pub trait ArenaAlloc {
+    /// Error type used when the allocation fails.
     type Error;
+
+    /// Try to allocate memory for the given layout.
+    ///
+    /// # Errors
+    ///
+    /// If for whatever reasons the allocation fails, returns the given an error variant will be returned.
     fn try_alloc_layout(&self, layout: Layout) -> Result<NonNull<u8>, Self::Error>;
 }
-
-#[cfg(feature = "bumpalo")]
-impl ArenaAlloc for Bump {
-    type Error = AllocErr;
-    fn try_alloc_layout(&self, layout: Layout) -> Result<NonNull<u8>, Self::Error> {
-        self.try_alloc_layout(layout)
-    }
-}
-
 
 /// Header of a droppable allocation
 struct Droppable {
@@ -40,6 +51,8 @@ struct Droppable {
 }
 
 impl Droppable {
+
+    /// The generic "drop function".
     unsafe fn drop<T>(mut this: NonNull<Self>) {
         unsafe {
             let this = this.as_mut();
@@ -75,6 +88,12 @@ impl Droppable {
     }
 }
 
+#[cfg(feature = "bumpalo")]
+type Alloc = ::bumpalo::Bump;
+
+#[cfg(not(feature = "bumpalo"))]
+type Alloc = fallback::LeakingAlloc;
+
 /// A bump-allocator based arena that cleanly drops allocated data.
 ///
 /// # Example
@@ -99,18 +118,22 @@ pub struct Rodeo<A: ArenaAlloc> {
     last: Cell<Option<NonNull<Droppable>>>,
 }
 
-#[cfg(feature = "bumpalo")]
-impl Rodeo<Bump> {
+impl Rodeo<Alloc> {
+    /// Create a new dropping allocator with a default allocator (a [`bumpalo::Bump`] if the `bumpalo` feature is enabled).
     #[must_use]
     pub fn new() -> Self {
         Self {
-            allocator: Bump::new(),
+            allocator: Alloc::default(),
             last: Cell::default(),
         }
     }
 }
 
-impl<A: ArenaAlloc> Rodeo<A> {
+impl<A> Rodeo<A>
+where
+    A: ArenaAlloc,
+{
+    /// Creates a new dropping allocator based on the given arena allocator.
     #[must_use]
     pub fn with_allocator(allocator: A) -> Self {
         Self {
@@ -118,7 +141,6 @@ impl<A: ArenaAlloc> Rodeo<A> {
             last: Cell::default(),
         }
     }
-
 
     /// Allocate an object in this `Rodeo` and return an exclusive reference to it.
     ///
@@ -180,9 +202,7 @@ impl<A: ArenaAlloc> Rodeo<A> {
         Ok(unsafe { &mut (*ptr).1 })
     }
 
-    /// Return the underlying allocator.
-    ///
-    /// Returns only a shared reference (so as not to be able to reset).
+    /// Return a shared reference to the underlying allocator.
     ///
     /// Any object directly allocated with the allocator **will not be dropped**.
     pub const fn allocator(&self) -> &A {
@@ -196,105 +216,12 @@ fn oom() -> ! {
     panic!("out of memory")
 }
 
-impl<A> Drop for Rodeo<A> {
+impl<A: ArenaAlloc> Drop for Rodeo<A> {
     fn drop(&mut self) {
         let mut current = self.last.get();
         while let Some(droppable) = current {
             Droppable::call_dropper(droppable);
             current = unsafe { droppable.as_ref().previous };
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use core::cell::RefCell;
-
-    use super::*;
-
-    use proptest::prelude::*;
-
-    struct DropCallback<F: FnMut()>(F);
-    impl<F: FnMut()> Drop for DropCallback<F> {
-        fn drop(&mut self) {
-            (self.0)()
-        }
-    }
-
-    #[test]
-    fn test_drop() {
-        let mut witness = false;
-        {
-            let rodeo = Rodeo::new();
-            let _dcb = rodeo.alloc(DropCallback(|| {
-                witness = true;
-            }));
-            assert!(!witness);
-        }
-        assert!(witness);
-    }
-
-    #[test]
-    fn test_no_drop() {
-        let rodeo = Rodeo::new();
-        let a = rodeo.alloc(1_u128);
-        assert_eq!(a, &1);
-        let b = rodeo.alloc(2_u64);
-        assert_eq!(b, &2);
-        let c = rodeo.alloc(3_u32);
-        assert_eq!(c, &3);
-        let d = rodeo.alloc(4_u16);
-        assert_eq!(d, &4);
-        let e = rodeo.alloc(5_u8);
-        assert_eq!(e, &5);
-        let () = rodeo.alloc(());
-    }
-
-    proptest! {
-
-        #[test]
-        fn test_number_drop(n in 1..2000u32) {
-            let witness = Cell::new(0);
-
-            {
-                let rodeo = Rodeo::new();
-                for _ in 0..n {
-                    let _ = rodeo.alloc(DropCallback(|| {
-                        witness.set(witness.get()+1);
-                    }));
-                }
-                assert_eq!(witness.get(), 0);
-            }
-
-            assert_eq!(witness.get(), n);
-        }
-
-        #[test]
-        fn test_order_drop(n in 2..100u8) {
-            let witness = RefCell::new(Vec::with_capacity(n as usize));
-
-            {
-                let rodeo = Rodeo::new();
-                for i in 0..n {
-                    let _ = rodeo.alloc(DropCallback(|| {
-                        witness.borrow_mut().push(i);
-                    }));
-                }
-                assert!(witness.borrow().is_empty());
-            }
-
-            let vec = witness.take();
-            prop_assert_eq!(vec.len(), n as usize);
-            prop_assert!(vec.windows(2).all(|w| w[0] >= w[1]));
-        }
-    }
-
-    #[test]
-    fn test_bump() {
-        let bump = Bump::new();
-
-        let _ = bump.alloc(1);
-
-        drop(bump);
     }
 }
