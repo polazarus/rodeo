@@ -1,7 +1,6 @@
 //! Fast dropping arena based on _bumpalo_.
 
 #![no_std]
-
 #![warn(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::pedantic)]
 #![warn(clippy::nursery)]
@@ -51,7 +50,6 @@ struct Droppable {
 }
 
 impl Droppable {
-
     /// The generic "drop function".
     unsafe fn drop<T>(mut this: NonNull<Self>) {
         unsafe {
