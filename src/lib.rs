@@ -223,3 +223,7 @@ impl<A: ArenaAlloc> Drop for Rodeo<A> {
         }
     }
 }
+
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+extern "C" {}
