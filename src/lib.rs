@@ -37,21 +37,20 @@ pub trait ArenaAlloc {
 }
 
 /// Header of a droppable allocation
-struct Droppable {
+struct Header {
     /// Previous header
-    previous: Option<NonNull<Droppable>>,
+    previous: Option<NonNull<Header>>,
 
-    /// Actual drop function
-    dropper: unsafe fn(NonNull<Droppable>),
+    /// Actual finalizer function
+    finalizer: unsafe fn(NonNull<Header>),
 
     /// Memory layout for debugging purposes only
     #[cfg(debug_assertions)]
     layout: Layout,
 }
 
-impl Droppable {
-    /// The generic "drop function".
-    unsafe fn drop<T>(this: NonNull<Self>) {
+impl Header {
+    unsafe fn ptr<T>(this: NonNull<Self>) -> *mut T {
         #[cfg(debug_assertions)]
         unsafe {
             let this = this.as_ref();
@@ -75,16 +74,20 @@ impl Droppable {
                 "not aligned pointer"
             );
         }
+        ptr
+    }
 
+    /// The generic "drop function".
+    unsafe fn drop_finalizer<T>(this: NonNull<Self>) {
         unsafe {
-            ptr.drop_in_place();
+            Self::ptr::<T>(this).drop_in_place();
         }
     }
 
-    fn call_dropper(droppable: NonNull<Self>) {
-        let dropper = unsafe { droppable.as_ref().dropper };
+    fn finalize(header: NonNull<Self>) {
         unsafe {
-            dropper(droppable);
+            let dropper = header.as_ref().finalizer;
+            dropper(header);
         }
     }
 }
@@ -116,7 +119,7 @@ type Alloc = fallback::LeakingAlloc;
 #[derive(Default)]
 pub struct Rodeo<A: ArenaAlloc> {
     allocator: A,
-    last: Cell<Option<NonNull<Droppable>>>,
+    last: Cell<Option<NonNull<Header>>>,
 }
 
 impl Rodeo<Alloc> {
@@ -177,28 +180,28 @@ where
     }
 
     fn try_alloc_with_drop<T>(&self, value: T) -> Result<&mut T, A::Error> {
-        let mut droppable = Droppable {
+        let mut header = Header {
             previous: None,
-            dropper: Droppable::drop::<T>,
+            finalizer: Header::drop_finalizer::<T>,
             #[cfg(debug_assertions)]
             layout: Layout::new::<T>(),
         };
 
         // allocate enough for the header and the actual value
-        let layout = Layout::new::<(Droppable, T)>();
+        let layout = Layout::new::<(Header, T)>();
         let raw = self.allocator.try_alloc_layout(layout)?;
         // NB: for Miri, for now, as of 2022-11-11,
         // it's better to stay with pointers
 
-        // set droppable's previous field after allocating successfully
-        droppable.previous = self.last.take();
-        let ptr = raw.cast::<(Droppable, T)>().as_ptr();
+        // set the header's previous field after allocating successfully
+        header.previous = self.last.take();
+        let ptr = raw.cast::<(Header, T)>().as_ptr();
         unsafe {
-            ptr.write((droppable, value));
+            ptr.write((header, value));
         }
 
-        let droppable_ptr = unsafe { NonNull::new_unchecked(addr_of_mut!((*ptr).0)) };
-        self.last.set(Some(droppable_ptr));
+        let header_ptr = unsafe { NonNull::new_unchecked(addr_of_mut!((*ptr).0)) };
+        self.last.set(Some(header_ptr));
 
         Ok(unsafe { &mut (*ptr).1 })
     }
@@ -220,9 +223,9 @@ fn oom() -> ! {
 impl<A: ArenaAlloc> Drop for Rodeo<A> {
     fn drop(&mut self) {
         let mut current = self.last.get();
-        while let Some(droppable) = current {
-            Droppable::call_dropper(droppable);
-            current = unsafe { droppable.as_ref().previous };
+        while let Some(header) = current {
+            Header::finalize(header);
+            current = unsafe { header.as_ref().previous };
         }
     }
 }
