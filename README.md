@@ -55,6 +55,11 @@ $ rustup +nightly component add miri # if needed
 $ cargo +nightly miri test
 ```
 
+## To-Do
+
+- [ ] support custom finalizer (opt-in? through another type?)
+- [ ] add slice allocation (like `Bump` but dropping)
+
 ## License
 
 Rodeo is distributed under the terms of both the MIT license and the Apache License (Version 2.0).
