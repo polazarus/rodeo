@@ -1,3 +1,5 @@
+//! Main tests of [`Rodeo`]
+
 use alloc::vec::Vec;
 use core::cell::RefCell;
 
