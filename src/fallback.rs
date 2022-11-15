@@ -1,8 +1,6 @@
 //! Fallback arena allocators for debugging purposes.
 
 use alloc::alloc::alloc;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
 use core::alloc::Layout;
 use core::ptr::NonNull;
 
