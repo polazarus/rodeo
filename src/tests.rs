@@ -1,6 +1,8 @@
 use alloc::vec::Vec;
 use core::cell::RefCell;
 
+use crate::fallback::FailingAlloc;
+
 use super::*;
 
 use proptest::prelude::*;
@@ -10,6 +12,44 @@ impl<F: FnMut()> Drop for DropCallback<F> {
     fn drop(&mut self) {
         (self.0)()
     }
+}
+
+#[test]
+fn test_no_mem() {
+    let rodeo = Rodeo::with_allocator(FailingAlloc);
+    assert!(rodeo.try_alloc(42).is_err());
+
+    let witness = Cell::new(false);
+    assert!(rodeo
+        .try_alloc(DropCallback(|| {
+            witness.set(true);
+        }))
+        .is_err());
+    assert!(witness.get());
+}
+
+#[test]
+#[should_panic]
+fn test_no_mem_panic() {
+    let rodeo = Rodeo::with_allocator(FailingAlloc);
+    let _ = rodeo.alloc(42);
+}
+
+#[test]
+#[should_panic]
+fn test_no_mem_panic_drop() {
+    let rodeo = Rodeo::with_allocator(FailingAlloc);
+    assert!(rodeo.try_alloc(42).is_err());
+
+    let witness = Cell::new(false);
+    let _guard = DropCallback(|| {
+        // double panic if witness is not set
+        assert!(witness.get());
+    });
+
+    let _ = rodeo.alloc(DropCallback(|| {
+        witness.set(true);
+    }));
 }
 
 #[test]

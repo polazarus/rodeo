@@ -19,3 +19,13 @@ impl ArenaAlloc for LeakingAlloc {
         NonNull::new(unsafe { alloc(layout) }).ok_or(AllocErr)
     }
 }
+
+/// Always failing allocator
+pub struct FailingAlloc;
+
+impl ArenaAlloc for FailingAlloc {
+    type Error = AllocErr;
+    fn try_alloc_layout(&self, _layout: Layout) -> Result<NonNull<u8>, Self::Error> {
+        Err(AllocErr)
+    }
+}
