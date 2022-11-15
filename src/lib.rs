@@ -51,11 +51,12 @@ struct Droppable {
 
 impl Droppable {
     /// The generic "drop function".
-    unsafe fn drop<T>(mut this: NonNull<Self>) {
+    unsafe fn drop<T>(this: NonNull<Self>) {
+        #[cfg(debug_assertions)]
         unsafe {
-            let this = this.as_mut();
+            let this = this.as_ref();
 
-            debug_assert_eq!(
+            assert_eq!(
                 this.layout,
                 Layout::new::<T>(),
                 "inconsistent memory layout"
@@ -65,9 +66,11 @@ impl Droppable {
         let ptr = this.as_ptr().cast::<(Self, T)>();
         let ptr: *mut T = unsafe { addr_of_mut!((*ptr).1) };
 
+        #[cfg(debug_assertions)]
         unsafe {
             let this = this.as_ref();
-            debug_assert!(
+
+            assert!(
                 (ptr as usize) & (this.layout.align() - 1) == 0,
                 "not aligned pointer"
             );
