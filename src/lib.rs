@@ -177,21 +177,19 @@ where
     }
 
     fn try_alloc_with_drop<T>(&self, value: T) -> Result<&mut T, A::Error> {
-        let mut header = Header {
-            previous: None,
-            finalizer: Header::drop_finalizer::<T>,
-            #[cfg(debug_assertions)]
-            layout: Layout::new::<T>(),
-        };
-
         // allocate enough for the header and the actual value
         let layout = Layout::new::<(Header, T)>();
         let raw = self.allocator.try_alloc_layout(layout)?;
         // NB: for Miri, for now, as of 2022-11-11,
         // it's better to stay with pointers
 
-        // set the header's previous field after allocating successfully
-        header.previous = self.last.take();
+        let header = Header {
+            previous: self.last.take(),
+            finalizer: Header::drop_finalizer::<T>,
+            #[cfg(debug_assertions)]
+            layout: Layout::new::<T>(),
+        };
+
         let ptr = raw.cast::<(Header, T)>().as_ptr();
         unsafe {
             ptr.write((header, value));
