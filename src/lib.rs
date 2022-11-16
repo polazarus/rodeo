@@ -212,6 +212,15 @@ where
     pub const fn allocator(&self) -> &A {
         &self.allocator
     }
+
+    /// "Leak" all allocated data.
+    ///
+    /// That is, no drop will be done on any previous allocation when the whole `Rodeo` is dropped.
+    ///
+    /// N.B.: there is no direct memory leak, only indirect memory and resource leak.
+    pub fn leak_all(&self) {
+        self.last.set(None);
+    }
 }
 
 #[inline(never)]
