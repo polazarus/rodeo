@@ -10,6 +10,8 @@ use super::ArenaAlloc;
 
 impl ArenaAlloc for Bump {
     type Error = AllocErr;
+
+    #[inline(always)]
     fn try_alloc_layout(&self, layout: Layout) -> Result<NonNull<u8>, Self::Error> {
         self.try_alloc_layout(layout)
     }
