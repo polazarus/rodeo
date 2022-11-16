@@ -126,10 +126,7 @@ impl Rodeo<Alloc> {
     /// Create a new dropping allocator with a default allocator (a [`bumpalo::Bump`] if the `bumpalo` feature is enabled).
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            allocator: Alloc::default(),
-            last: Cell::default(),
-        }
+        Self::with_allocator(Alloc::default())
     }
 }
 
@@ -139,10 +136,10 @@ where
 {
     /// Creates a new dropping allocator based on the given arena allocator.
     #[must_use]
-    pub fn with_allocator(allocator: A) -> Self {
+    pub const fn with_allocator(allocator: A) -> Self {
         Self {
             allocator,
-            last: Cell::default(),
+            last: Cell::new(None),
         }
     }
 
