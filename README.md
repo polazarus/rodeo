@@ -58,7 +58,7 @@ $ cargo +nightly miri test
 ## To-Do
 
 - [ ] support custom finalizer (opt-in? through another type?)
-- [ ] add slice allocation (like `Bump` but dropping)
+- [x] add slice allocation (like `Bump` but dropping)
 
 ## License
 
