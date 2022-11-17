@@ -8,7 +8,7 @@
 
 use core::alloc::Layout;
 use core::cell::Cell;
-use core::ptr::{addr_of_mut, NonNull};
+use core::ptr::NonNull;
 
 extern crate alloc;
 
@@ -42,53 +42,46 @@ struct Header {
     previous: Option<NonNull<Header>>,
 
     /// Actual finalizer function
-    finalizer: unsafe fn(NonNull<Header>),
+    finalizer: unsafe fn(NonNull<u8>),
+
+    /// Memory layout of associated data for debugging purposes only
+    #[cfg(debug_assertions)]
+    finalizer_data_layout: Layout,
 
     /// Memory layout for debugging purposes only
     #[cfg(debug_assertions)]
-    layout: Layout,
+    data_layout: Layout,
 }
 
 impl Header {
-    unsafe fn ptr<T>(this: NonNull<Self>) -> *mut T {
-        #[cfg(debug_assertions)]
-        unsafe {
-            let this = this.as_ref();
-
-            assert_eq!(
-                this.layout,
-                Layout::new::<T>(),
-                "inconsistent memory layout"
-            );
-        }
-
-        let ptr = this.as_ptr().cast::<(Self, T)>();
-        let ptr: *mut T = unsafe { addr_of_mut!((*ptr).1) };
-
-        #[cfg(debug_assertions)]
-        unsafe {
-            let this = this.as_ref();
-
-            assert!(
-                (ptr as usize) & (this.layout.align() - 1) == 0,
-                "not aligned pointer"
-            );
-        }
-        ptr
-    }
-
-    /// The generic "drop function".
-    unsafe fn drop_finalizer<T>(this: NonNull<Self>) {
-        unsafe {
-            Self::ptr::<T>(this).drop_in_place();
-        }
-    }
-
     fn finalize(header: NonNull<Self>) {
         unsafe {
             let dropper = header.as_ref().finalizer;
-            dropper(header);
+            dropper(header.cast());
         }
+    }
+}
+
+/// The generic "drop function".
+unsafe fn drop_finalizer<T>(non_null: NonNull<u8>) {
+    let header_layout = Layout::new::<Header>();
+    let unit_layout = Layout::new::<()>();
+    let t_layout = Layout::new::<T>();
+
+    #[cfg(debug_assertions)]
+    {
+        let header = unsafe { non_null.cast::<Header>().as_ref() };
+        debug_assert_eq!(unit_layout, header.finalizer_data_layout);
+        debug_assert_eq!(t_layout, header.data_layout);
+    }
+
+    let (layout, _) = header_layout.extend(unit_layout).unwrap();
+    let (_, offset_t) = layout.extend(t_layout).unwrap();
+
+    unsafe {
+        let bytes = non_null.as_ptr();
+        let ptr: *mut T = bytes.wrapping_add(offset_t).cast();
+        ptr.drop_in_place();
     }
 }
 
@@ -153,52 +146,69 @@ where
         ref_mut
     }
 
-    /// Try to allocate an object in this `Rodeo` and return an exclusive reference to it.
+    /// Try to allocate an object in this allocator  and return an exclusive
+    /// reference to it.
     ///
     /// # Errors
     ///
     /// Errors if reserving space for `T` fails.
     pub fn try_alloc<T>(&self, value: T) -> Result<&mut T, A::Error> {
-        if core::mem::needs_drop::<T>() {
-            self.try_alloc_with_drop(value)
+        let ptr: *mut T = if core::mem::needs_drop::<T>() {
+            let raw =
+                self.try_alloc_layout_with_finalizer(Layout::new::<T>(), drop_finalizer::<T>, ())?;
+            raw.cast()
         } else {
-            self.try_alloc_without_drop(value)
-            // self.allocator.try_alloc(value)
-        }
-    }
-
-    fn try_alloc_without_drop<T>(&self, value: T) -> Result<&mut T, A::Error> {
-        let layout = Layout::new::<T>();
-        let mut ptr = self.allocator.try_alloc_layout(layout)?.cast::<T>();
+            let layout = Layout::new::<T>();
+            self.allocator.try_alloc_layout(layout)?.cast().as_ptr()
+        };
         unsafe {
-            ptr.as_ptr().write(value);
-            Ok(ptr.as_mut())
+            ptr.write(value);
+            Ok(&mut *ptr)
         }
     }
 
-    fn try_alloc_with_drop<T>(&self, value: T) -> Result<&mut T, A::Error> {
+    #[inline]
+    fn try_alloc_layout_with_finalizer<D>(
+        &self,
+        data_layout: Layout,
+        finalizer: unsafe fn(NonNull<u8>),
+        finalizer_data: D,
+    ) -> Result<*mut u8, A::Error> {
+        let header_layout = Layout::new::<Header>();
+        let finalizer_data_layout = Layout::new::<D>();
+        let (hdr_fd_layout, fd_offset) = header_layout.extend(finalizer_data_layout).unwrap();
+        let (full_layout, data_offset) = hdr_fd_layout.extend(data_layout).unwrap();
+
         // allocate enough for the header and the actual value
-        let layout = Layout::new::<(Header, T)>();
-        let raw = self.allocator.try_alloc_layout(layout)?;
-        // NB: for Miri, for now, as of 2022-11-11,
-        // it's better to stay with pointers
+        let ptr = self.allocator.try_alloc_layout(full_layout)?.as_ptr();
 
         let header = Header {
             previous: self.last.take(),
-            finalizer: Header::drop_finalizer::<T>,
+            finalizer,
             #[cfg(debug_assertions)]
-            layout: Layout::new::<T>(),
+            finalizer_data_layout,
+            #[cfg(debug_assertions)]
+            data_layout,
         };
 
-        let ptr = raw.cast::<(Header, T)>().as_ptr();
+        let header_non_null;
+        let value_ptr;
+        let finalizer_data_ptr;
+
         unsafe {
-            ptr.write((header, value));
+            let header_ptr = ptr.cast::<Header>();
+            header_ptr.write(header);
+            header_non_null = NonNull::new_unchecked(header_ptr);
+
+            finalizer_data_ptr = ptr.wrapping_add(fd_offset).cast::<D>();
+            finalizer_data_ptr.write(finalizer_data);
+
+            value_ptr = ptr.wrapping_add(data_offset);
         }
 
-        let header_ptr = unsafe { NonNull::new_unchecked(addr_of_mut!((*ptr).0)) };
-        self.last.set(Some(header_ptr));
+        self.last.set(Some(header_non_null));
 
-        Ok(unsafe { &mut (*ptr).1 })
+        Ok(value_ptr)
     }
 
     /// Return a shared reference to the underlying allocator.
