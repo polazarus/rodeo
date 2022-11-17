@@ -9,6 +9,7 @@ use super::*;
 
 use proptest::prelude::*;
 
+#[derive(Clone)]
 struct DropCallback<F: FnMut()>(F);
 impl<F: FnMut()> Drop for DropCallback<F> {
     fn drop(&mut self) {
@@ -81,6 +82,35 @@ fn test_no_drop() {
     let e = rodeo.alloc(5_u8);
     assert_eq!(e, &5);
     let () = rodeo.alloc(());
+}
+
+#[test]
+fn test_slice_copy() {
+    let rodeo = Rodeo::new();
+    let s1 = rodeo.alloc_slice_copy(b"test");
+    assert_eq!(s1, b"test");
+    let s2 = rodeo.alloc_slice_copy(b"hello");
+    assert_eq!(s2, b"hello");
+}
+
+#[test]
+fn test_str() {
+    let rodeo = Rodeo::new();
+    let s1 = rodeo.alloc_str("test");
+    assert_eq!(s1, "test");
+    let s2 = rodeo.alloc_str("hello");
+    assert_eq!(s2, "hello");
+}
+
+#[test]
+fn test_slice_clone() {
+    let witness = Cell::new(1);
+    let dc = DropCallback(|| witness.set(witness.get() + 1));
+    let array = [dc.clone(), dc.clone()];
+    {
+        let rodeo = Rodeo::new();
+        rodeo.alloc_slice_clone(&array);
+    }
 }
 
 fn check_number_drop(n: u32) {
