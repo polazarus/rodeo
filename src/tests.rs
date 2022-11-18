@@ -103,14 +103,40 @@ fn test_str() {
 }
 
 #[test]
-fn test_slice_clone() {
-    let witness = Cell::new(1);
+fn test_slice_clone_no_drop() {
+    #[derive(Clone)]
+    struct S(usize);
+
+    let array = [S(1), S(2)];
+    {
+        let rodeo = Rodeo::new();
+        rodeo.alloc_slice_clone(&array);
+    }
+}
+
+#[test]
+fn test_slice_clone_drop_leak() {
+    let witness = Cell::new(0);
+    let dc = DropCallback(|| witness.set(witness.get() + 1));
+    let array = [dc.clone(), dc.clone()];
+    {
+        let rodeo = Rodeo::new();
+        rodeo.alloc_slice_clone(&array);
+        rodeo.leak_all();
+    }
+    assert_eq!(witness.get(), 0);
+}
+
+#[test]
+fn test_slice_clone_drop() {
+    let witness = Cell::new(0);
     let dc = DropCallback(|| witness.set(witness.get() + 1));
     let array = [dc.clone(), dc.clone()];
     {
         let rodeo = Rodeo::new();
         rodeo.alloc_slice_clone(&array);
     }
+    assert_eq!(witness.get(), 2);
 }
 
 fn check_number_drop(n: u32) {

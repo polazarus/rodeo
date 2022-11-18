@@ -154,7 +154,7 @@ impl<A> Rodeo<A>
 where
     A: ArenaAlloc,
 {
-    /// Creates a new dropping allocator based on the given arena allocator.
+    /// Create a new dropping allocator based on the given arena allocator.
     #[must_use]
     pub const fn with_allocator(allocator: A) -> Self {
         Self {
@@ -256,7 +256,9 @@ where
         let finalizer_data_ptr;
 
         unsafe {
+            #[allow(clippy::cast_ptr_alignment)]
             let header_ptr = ptr.cast::<Header>();
+
             header_ptr.write(header);
             header_non_null = NonNull::new_unchecked(header_ptr);
 
@@ -327,7 +329,7 @@ where
                 });
 
                 for (i, item) in slice.iter().enumerate() {
-                    *ptr.wrapping_add(i) = item.clone();
+                    ptr.wrapping_add(i).write(item.clone());
                     progress.set(progress.get() + 1);
                 }
 
@@ -340,7 +342,7 @@ where
 
             unsafe {
                 for (i, item) in slice.iter().enumerate() {
-                    *ptr.wrapping_add(i) = item.clone();
+                    ptr.wrapping_add(i).write(item.clone());
                 }
                 Ok(core::slice::from_raw_parts_mut(ptr, len))
             }
