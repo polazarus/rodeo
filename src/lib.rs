@@ -1,6 +1,6 @@
 //! Fast dropping arena based on _bumpalo_.
 
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
 #![warn(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::pedantic)]
 #![warn(clippy::nursery)]

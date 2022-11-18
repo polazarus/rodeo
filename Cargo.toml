@@ -11,7 +11,8 @@ readme = "./README.md"
 repository = "https://github.com/polazarus/rodeo"
 
 [features]
-default = ["bumpalo"]
+default = ["bumpalo", "std"]
+std = []
 
 [dependencies]
 bumpalo = { version = "3.11.1", optional = true }
