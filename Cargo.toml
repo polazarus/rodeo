@@ -19,3 +19,9 @@ bumpalo = { version = "3.11.1", optional = true }
 
 [dev-dependencies]
 proptest = "1.0.0"
+criterion = "0.4.0"
+typed-arena = "2.0.1"
+
+[[bench]]
+name = "main"
+harness = false
