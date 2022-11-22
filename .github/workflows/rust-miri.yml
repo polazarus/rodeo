@@ -24,6 +24,8 @@ jobs:
           rustup default nightly
           rustup component add miri
 
+      - name: Run Miri setup
+        run: cargo miri setup
+
       - name: Run Miri
-        run:
-          cargo run test
+        run: cargo miri test
