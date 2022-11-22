@@ -1,15 +1,20 @@
 # Rodeo
 
-A dropping arena based on [bumpalo](https://crates.io/crates/bumpalo).
+[![Rust Docs](https://img.shields.io/docsrs/rodeo)](https://docs.rs/rodeo/)
+[![Rust Build Status](https://img.shields.io/github/workflow/status/polazarus/rodeo/rust)](https://github.com/polazarus/rodeo/actions/workflows/rust.yml)
+[![Rust Nightly Build Status](https://img.shields.io/github/workflow/status/polazarus/rodeo/rust-nightly?label=nightly+build)](https://github.com/polazarus/rodeo/actions/workflows/rust-nightly.yml)
+![](https://img.shields.io/crates/l/rodeo)
+
+**A dropping untyped arena** based on [bumpalo](https://crates.io/crates/bumpalo):
+
+* _arena_: an allocator object that allows en masse deallocation
+* _untyped_: the same allocator object may be used to allocate **any type**, unlike [`typed_arena`](https://crates.io/crates/typed_arena)
+* _dropping_: any drop on the allocated data **will be called**, unlike [`bumpalo`](https://crates.io/crates/bumpalo)
 
 ## Example
 
 ```rust
 use rodeo::Rodeo;
-
-let rodeo = Rodeo::new();
-
-let _ref_n = rodeo.alloc(42);
 
 struct S;
 impl Drop for S {
@@ -17,22 +22,33 @@ impl Drop for S {
         println!("dropping S");
     }
 }
-let _ref = rodeo.alloc(S);
 
-drop(rodeo);
+{
+    let rodeo = Rodeo::new();
+    let n = rodeo.alloc(42);
+    let r = rodeo.alloc(S);
+}
 ```
 
 prints `dropping S`
 
-## Features
+## Features and `#[no_std]` Support
 
 * `bumpalo` (default)
 
+    If not selected, you will have to plug your own allocator that implements the trait [`ArenaAlloc`](https://docs.rs/rodeo/latest/rodeo/trait.ArenaAlloc.html).
+
+* `std` (default)
+
+    For now, `rodeo` is mostly a `no_std` crate. But `std` makes debugging a whole lot simpler!
+
+You have to opt-out of `bumpalo` and `std` with `default-features = false`.
+
 ## Safety
 
-As a memory management library, this code uses `unsafe` extensively. However, the code is tested and dynamically verified.
+As a memory management library, this code uses `unsafe` extensively. However, the code is tested and dynamically verified with Miri.
 
-## Verification strategy
+## Verification Strategy
 
 ### Tests
 
@@ -48,7 +64,7 @@ $ cargo test
 
 [Miri](https://github.com/rust-lang/miri) is an interpreter for MIR (an intermediate representation of Rust) that checks Rust code and in particular _unsafe_ code against the experimental Stacked Borrows memory model.
 
-As of `miri 0.1.0 (c1a859b 2022-11-10)`, Rodeo's tests emits no error or warning when run with Miri.
+As of `miri 0.1.0 (c1a859b 2022-11-10)`, Rodeo's tests show no error or warning when run with Miri.
 
 ```shell
 $ rustup +nightly component add miri # if needed
@@ -58,8 +74,9 @@ $ LEAK=1 cargo +nightly miri test # should leak two buffers
 
 ## To-Do
 
-- [ ] support custom finalizer (opt-in? through another type?)
-- [x] add slice allocation (like `Bump` but dropping)
+- [ ] add generic DST allocation, hide behind feature pending stablization of [Rust RFC 2580](https://rust-lang.github.io/rfcs/2580-ptr-meta.html)
+
+- [ ] investigate `rodeo`'s use for self-referential structures
 
 ## License
 
