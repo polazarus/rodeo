@@ -53,6 +53,7 @@ As of `miri 0.1.0 (c1a859b 2022-11-10)`, Rodeo's tests emits no error or warning
 ```shell
 $ rustup +nightly component add miri # if needed
 $ cargo +nightly miri test
+$ LEAK=1 cargo +nightly miri test # should leak two buffers
 ```
 
 ## To-Do

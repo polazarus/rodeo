@@ -184,6 +184,18 @@ fn test_order_drop_10() {
     check_order_drop(10);
 }
 
+#[test]
+fn test_drop_should_not_leak() {
+    let rodeo = Rodeo::new();
+    let _ = rodeo.alloc(Box::new(
+        0xDEAD_BEEF__DEAD_BEEF__DEAD_BEEF__DEAD_BEEF_u128.to_be(),
+    ));
+    let _ = rodeo.alloc(vec![b'\xAA'; 50]);
+    if option_env!("LEAK").is_some() {
+        rodeo.leak_all();
+    }
+}
+
 proptest! {
     #[test]
     #[cfg_attr(miri, ignore)]
