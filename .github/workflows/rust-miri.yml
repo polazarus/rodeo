@@ -1,0 +1,29 @@
+name: rust-miri
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+  schedule:
+    - cron: '1 2 * * 1'
+
+jobs:
+  rust-miri:
+    name: Run Miri
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install up-to-date toolchain
+        run: |
+          rustup self update
+          rustup toolchain install nightly
+          rustup default nightly
+          rustup component add miri
+
+      - name: Run Miri
+        run:
+          cargo run test
