@@ -7,13 +7,11 @@ use crate::fallback::FailingAlloc;
 
 use super::*;
 
-use proptest::prelude::*;
-
 #[derive(Clone)]
 struct DropCallback<F: FnMut()>(F);
 impl<F: FnMut()> Drop for DropCallback<F> {
     fn drop(&mut self) {
-        (self.0)()
+        (self.0)();
     }
 }
 
@@ -92,23 +90,20 @@ fn test_drop() {
 }
 
 #[test]
-fn test_no_drop() {
+fn test_alloc_value_eq_no_drop() {
     let rodeo = Rodeo::new();
-    let a = rodeo.alloc(1_u128);
-    assert_eq!(a, &1);
-    let b = rodeo.alloc(2_u64);
-    assert_eq!(b, &2);
-    let c = rodeo.alloc(3_u32);
-    assert_eq!(c, &3);
-    let d = rodeo.alloc(4_u16);
-    assert_eq!(d, &4);
-    let e = rodeo.alloc(5_u8);
-    assert_eq!(e, &5);
-    let () = rodeo.alloc(());
+
+    // type consistency check
+    let &mut () = rodeo.alloc(());
+
+    for n in [1, 2, 3, 42, 0xDEAD_CAFE_u128, 80] {
+        let p = rodeo.alloc(n);
+        assert_eq!(p, &n);
+    }
 }
 
 #[test]
-fn test_slice_copy() {
+fn test_alloc_slice_copy() {
     let rodeo = Rodeo::new();
     let s1 = rodeo.alloc_slice_copy(b"test");
     assert_eq!(s1, b"test");
@@ -117,7 +112,7 @@ fn test_slice_copy() {
 }
 
 #[test]
-fn test_str() {
+fn test_alloc_str() {
     let rodeo = Rodeo::new();
     let s1 = rodeo.alloc_str("test");
     assert_eq!(s1, "test");
@@ -126,19 +121,20 @@ fn test_str() {
 }
 
 #[test]
-fn test_slice_clone_no_drop() {
-    #[derive(Clone)]
+fn test_alloc_slice_clone_no_drop() {
+    #[derive(Clone, Eq, PartialEq, Debug)]
     struct S(usize);
 
     let array = [S(1), S(2)];
     {
         let rodeo = Rodeo::new();
-        rodeo.alloc_slice_clone(&array);
+        let slice = rodeo.alloc_slice_clone(&array);
+        assert_eq!(slice, &array[..]);
     }
 }
 
 #[test]
-fn test_slice_clone_drop_leak() {
+fn test_alloc_slice_clone_drop_leak() {
     let witness = Cell::new(0);
     let dc = DropCallback(|| witness.set(witness.get() + 1));
     let array = [dc.clone(), dc.clone()];
@@ -151,7 +147,7 @@ fn test_slice_clone_drop_leak() {
 }
 
 #[test]
-fn test_slice_clone_drop() {
+fn test_alloc_slice_clone_drop() {
     let witness = Cell::new(0);
     let dc = DropCallback(|| witness.set(witness.get() + 1));
     let array = [dc.clone(), dc.clone()];
@@ -162,23 +158,7 @@ fn test_slice_clone_drop() {
     assert_eq!(witness.get(), 2);
 }
 
-fn check_number_drop(n: u32) {
-    let witness = Cell::new(0);
-
-    {
-        let rodeo = Rodeo::new();
-        for _ in 0..n {
-            let _ = rodeo.alloc(DropCallback(|| {
-                witness.set(witness.get() + 1);
-            }));
-        }
-        assert_eq!(witness.get(), 0);
-    }
-
-    assert_eq!(witness.get(), n);
-}
-
-fn check_order_drop(n: u8) {
+fn check_alloc_drop_order(n: u8) {
     let witness = RefCell::new(Vec::with_capacity(n as usize));
 
     {
@@ -198,37 +178,51 @@ fn check_order_drop(n: u8) {
 }
 
 #[test]
-fn test_number_drop_10() {
-    check_number_drop(10);
+fn test_alloc_drop_order_10() {
+    check_alloc_drop_order(10);
 }
 
 #[test]
-fn test_order_drop_10() {
-    check_order_drop(10);
+fn test_alloc_drop_order_100() {
+    check_alloc_drop_order(100);
+}
+
+#[test]
+fn test_alloc_slice_drop_order() {
+    let n = 10;
+    let witness = RefCell::new(Vec::with_capacity(n));
+
+    let objects: Vec<_> = (0..n)
+        .map(|i| {
+            let witness = &witness;
+            DropCallback(move || {
+                witness.borrow_mut().push(i);
+            })
+        })
+        .collect();
+
+    {
+        let rodeo = Rodeo::new();
+        let _clones = rodeo.alloc_slice_clone(&objects[..]);
+    }
+    let got: Vec<_> = witness.borrow_mut().drain(..).collect();
+
+    // compute the expected drop order
+    // i.e. the order when dropping the original objects
+    drop(objects);
+    let expected: Vec<_> = witness.take();
+
+    assert_eq!(got, expected);
 }
 
 #[test]
 fn test_drop_should_not_leak() {
     let rodeo = Rodeo::new();
     let _ = rodeo.alloc(Box::new(
-        0xDEAD_BEEF__DEAD_BEEF__DEAD_BEEF__DEAD_BEEF_u128.to_be(),
+        0xDEAD_BEEF_DEAD_BEEF_DEAD_BEEF_DEAD_BEEF_u128.to_be(),
     ));
     let _ = rodeo.alloc(vec![b'\xAA'; 50]);
     if option_env!("LEAK").is_some() {
         let _alloc = rodeo.into_allocator();
-    }
-}
-
-proptest! {
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn test_number_drop(n in 1..2000u32) {
-        check_number_drop(n);
-    }
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn test_order_drop(n in 2..100u8) {
-        check_order_drop(n);
     }
 }
