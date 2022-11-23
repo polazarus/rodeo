@@ -74,7 +74,7 @@ $ LEAK=1 cargo +nightly miri test # should leak two buffers
 
 ## To-Do
 
-- [ ] add generic DST allocation, hide behind feature pending stablization of [Rust RFC 2580](https://rust-lang.github.io/rfcs/2580-ptr-meta.html)
+- [ ] add generic DST allocation, hide behind feature pending stabilization of [Rust RFC 2580](https://rust-lang.github.io/rfcs/2580-ptr-meta.html)
 
 - [ ] investigate `rodeo`'s use for self-referential structures
 
