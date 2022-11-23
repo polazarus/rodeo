@@ -52,8 +52,6 @@ As a memory management library, this code uses `unsafe` extensively. However, th
 
 ### Tests
 
-Some test scenarios are written with [proptest](https://altsysrq.github.io/proptest-book/).
-
 Run the tests simply with:
 
 ```shell
