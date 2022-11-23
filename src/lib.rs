@@ -356,13 +356,16 @@ where
         &self.allocator
     }
 
-    /// "Leak" all allocated data.
+    /// Convert into the underlying allocator without dropping any allocated
+    /// droppable data.
     ///
-    /// That is, no drop will be done on any previous allocation when the whole `Rodeo` is dropped.
+    /// ⚠️ No drop will be done on any previous allocation of this Rodeo.
     ///
     /// N.B.: there is no direct memory leak, only indirect memory and resource leak.
-    pub fn leak_all(&self) {
-        self.last.set(None);
+    pub fn into_allocator(self) -> A {
+        let alloc = unsafe { std::ptr::read(&self.allocator) };
+        std::mem::forget(self);
+        alloc
     }
 }
 

@@ -56,6 +56,29 @@ fn test_no_mem_panic_drop() {
 }
 
 #[test]
+fn test_into_allocator() {
+    struct FakeAlloc;
+    impl ArenaAlloc for FakeAlloc {
+        type Error = ();
+
+        fn try_alloc_layout(&self, _layout: Layout) -> Result<NonNull<u8>, Self::Error> {
+            todo!()
+        }
+    }
+    let rodeo = Rodeo::with_allocator(FakeAlloc);
+    let _alloc: FakeAlloc = rodeo.into_allocator();
+}
+
+#[test]
+fn test_into_allocator_drop_not_called() {
+    let witness = Cell::new(false);
+    let rodeo = Rodeo::new();
+    rodeo.alloc(DropCallback(|| witness.set(true)));
+    let _alloc = rodeo.into_allocator();
+    assert!(!witness.get(), "drop should not be called");
+}
+
+#[test]
 fn test_drop() {
     let witness = Cell::new(false);
     {
@@ -122,7 +145,7 @@ fn test_slice_clone_drop_leak() {
     {
         let rodeo = Rodeo::new();
         rodeo.alloc_slice_clone(&array);
-        rodeo.leak_all();
+        let _alloc = rodeo.into_allocator();
     }
     assert_eq!(witness.get(), 0);
 }
@@ -192,7 +215,7 @@ fn test_drop_should_not_leak() {
     ));
     let _ = rodeo.alloc(vec![b'\xAA'; 50]);
     if option_env!("LEAK").is_some() {
-        rodeo.leak_all();
+        let _alloc = rodeo.into_allocator();
     }
 }
 
