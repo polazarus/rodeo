@@ -2,37 +2,42 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.0] - 2022-11-15
+## [0.2.0] - unreleased
 
 ### Bug Fixes
 
-- Remove unused imports
-- Add Cargo.lock to .gitignore
-- Add miri-specific test
-- Correct removal of debug asserts in release
-
-### Documentation
-
-- Complete README
-- Improve Miri paragraph in README
-- Add TODOs to README
+- Add missing deps and bench declaration
+- Fix clippy warning
 
 ### Features
 
-- Add fallback alloc and split into modules
-- Add failing allocator tests
-- Add integration tests
-
-### Miscellaneous Tasks
-
-- Add licensing information
-- Add more keywords and categories to Cargo.toml
+- Better tests
+- Add miri leak test
+- Improve README
 
 ### Refactor
 
-- Rename some internals
+- Better Github actions
+- **breaking**: Replace `leak_all` by `into_allocator` in `Rodeo`
+- Clean up tests
+- Remove proptest
 
-### Styling
+## [0.1.1] - 2022-11-18
 
-- Format code
+### Features
 
+- Add slice allocs (clone, copy and str)
+- Add Github Actions (build, build nightly, clippy)
+- Add `Rodeo::leak_all`
+- Add some benchmarks
+- Constify `Rodeo::with_allocator`
+
+### Refactor
+
+- Simplify `try_alloc_with_drop`
+- Add `inline` to `Bump`'s `Arena:Alloc` impl
+- Prepare for slice finalizer
+
+## [0.1.0] - 2022-11-15
+
+First MVP release
