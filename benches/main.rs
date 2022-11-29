@@ -75,8 +75,7 @@ fn with_rodeo_no_drop_need_drop(n: usize) {
     for i in 0..n {
         arena.alloc(ToDrop(i));
     }
-    arena.leak_all();
-    let _ = black_box(arena);
+    let _ = arena.into_allocator();
 }
 
 fn with_rodeo_no_drop(n: usize) {
