@@ -9,6 +9,7 @@
 use core::alloc::Layout;
 use core::cell::Cell;
 use core::ptr::NonNull;
+use core::{mem, ptr, slice};
 
 extern crate alloc;
 
@@ -93,22 +94,28 @@ unsafe fn slice_drop_finalizer<T>(non_null: NonNull<u8>) {
     let (layout, offset_len) = header_layout.extend(len_layout).unwrap();
     let (_, offset_t) = layout.extend(t_layout).unwrap();
 
+    let ptr = non_null.as_ptr();
+
+    let len = unsafe { *ptr.wrapping_add(offset_len).cast() };
+
+    #[cfg(debug_assertions)]
     unsafe {
-        let ptr = non_null.as_ptr();
-        let len = *ptr.wrapping_add(offset_len).cast();
+        let header: &Header = &*ptr.cast();
 
-        #[cfg(debug_assertions)]
-        {
-            let header = non_null.cast::<Header>().as_ref();
-            let slice_layout =
-                Layout::from_size_align_unchecked(t_layout.size() * len, t_layout.align());
-            debug_assert_eq!(len_layout, header.finalizer_data_layout);
-            debug_assert_eq!(slice_layout, header.data_layout);
-        }
+        let size = t_layout.size();
+        let align = t_layout.align();
+        // waiting for `alloc_layout_extra` stabilization
+        let padded_size = size.wrapping_add(align).wrapping_sub(1) & !align.wrapping_sub(1);
+        let slice_layout = Layout::from_size_align_unchecked(padded_size * len, t_layout.align());
 
-        let ptr: *mut T = ptr.wrapping_add(offset_t).cast();
-        let slice = core::slice::from_raw_parts_mut(ptr, len);
-        core::ptr::drop_in_place(slice);
+        debug_assert_eq!(len_layout, header.finalizer_data_layout);
+        debug_assert_eq!(slice_layout, header.data_layout);
+    }
+
+    let ptr: *mut T = ptr.wrapping_add(offset_t).cast();
+    unsafe {
+        let slice = slice::from_raw_parts_mut(ptr, len);
+        ptr::drop_in_place(slice);
     }
 }
 
@@ -118,7 +125,7 @@ type Alloc = ::bumpalo::Bump;
 #[cfg(not(feature = "bumpalo"))]
 type Alloc = fallback::LeakingAlloc;
 
-/// A bump-allocator based arena that cleanly drops allocated data.
+/// An arena that cleanly drops allocated data.
 ///
 /// # Example
 ///
@@ -137,23 +144,21 @@ type Alloc = fallback::LeakingAlloc;
 /// *n = 2;
 /// ```
 #[derive(Default)]
-pub struct Rodeo<A: ArenaAlloc> {
+pub struct Rodeo<A> {
     allocator: A,
     last: Cell<Option<NonNull<Header>>>,
 }
 
 impl Rodeo<Alloc> {
-    /// Create a new dropping allocator with a default allocator (a [`bumpalo::Bump`] if the `bumpalo` feature is enabled).
+    /// Create a new dropping allocator with a default allocator
+    /// (a [`bumpalo::Bump`] if the `bumpalo` feature is enabled).
     #[must_use]
     pub fn new() -> Self {
         Self::with_allocator(Alloc::default())
     }
 }
 
-impl<A> Rodeo<A>
-where
-    A: ArenaAlloc,
-{
+impl<A> Rodeo<A> {
     /// Create a new dropping allocator based on the given arena allocator.
     #[must_use]
     pub const fn with_allocator(allocator: A) -> Self {
@@ -163,36 +168,45 @@ where
         }
     }
 
-    /// Allocate an object in this `Rodeo` and return an exclusive reference to it.
+    /// Return a shared reference to the underlying allocator.
+    ///
+    /// Any object directly allocated with the allocator
+    /// **will not be dropped**.
+    pub const fn allocator(&self) -> &A {
+        &self.allocator
+    }
+
+    /// Convert into the underlying allocator without dropping any allocated
+    /// droppable data.
+    ///
+    /// ⚠️ No drop will be done on any previous allocation of this Rodeo.
+    ///
+    /// N.B.: there is no direct memory leak, only indirect memory and
+    /// resource leaks.
+    pub fn into_allocator(self) -> A {
+        let alloc = unsafe { ptr::read(&self.allocator) };
+        mem::forget(self);
+        alloc
+    }
+}
+
+impl<A> Rodeo<A>
+where
+    A: ArenaAlloc,
+{
+    /// Allocate an object in this `Rodeo` and return an exclusive reference to
+    /// it.
     ///
     /// # Panics
     ///
     /// Panics if reserving space for `T` (and possibly an header) fails.
     pub fn alloc<T>(&self, value: T) -> &mut T {
-        let Ok(ref_mut) = self.try_alloc(value) else { oom() };
-        ref_mut
-    }
-
-    /// Allocate a slice by copying the input slice in this `Rodeo` and return
-    /// an exclusive reference to it.
-    ///
-    /// # Panics
-    ///
-    /// Panics if reserving space for the slice fails.
-    pub fn alloc_slice_copy<T: Copy>(&self, value: &[T]) -> &mut [T] {
-        let Ok(ref_mut) = self.try_alloc_slice_copy(value) else { oom() };
-        ref_mut
-    }
-
-    /// Allocate a slice by cloning the input slice and return an exclusive
-    /// reference to it.
-    ///
-    /// # Panics
-    ///
-    /// Panics if reserving space for the slice fails.
-    pub fn alloc_slice_clone<T: Clone>(&self, value: &[T]) -> &mut [T] {
-        let Ok(ref_mut) = self.try_alloc_slice_clone(value) else { oom() };
-        ref_mut
+        #[allow(clippy::option_if_let_else)]
+        if let Ok(ref_mut) = self.try_alloc(value) {
+            ref_mut
+        } else {
+            oom();
+        }
     }
 
     /// Allocate a string slice by copying an input string slice and return
@@ -202,18 +216,52 @@ where
     ///
     /// Panics if reserving space for the slice fails.
     pub fn alloc_str(&self, value: &str) -> &mut str {
-        let Ok(ref_mut) = self.try_alloc_str(value) else { oom() };
-        ref_mut
+        #[allow(clippy::option_if_let_else)]
+        if let Ok(ref_mut) = self.try_alloc_str(value) {
+            ref_mut
+        } else {
+            oom();
+        }
     }
 
-    /// Try to allocate an object in this allocator  and return an exclusive
+    /// Allocate a slice by copying the input slice in this `Rodeo` and return
+    /// an exclusive reference to it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if reserving space for the slice fails.
+    pub fn alloc_slice_copy<T: Copy>(&self, value: &[T]) -> &mut [T] {
+        #[allow(clippy::option_if_let_else)]
+        if let Ok(ref_mut) = self.try_alloc_slice_copy(value) {
+            ref_mut
+        } else {
+            oom();
+        }
+    }
+
+    /// Allocate a slice by cloning the input slice and return an exclusive
+    /// reference to it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if reserving space for the slice fails.
+    pub fn alloc_slice_clone<T: Clone>(&self, value: &[T]) -> &mut [T] {
+        #[allow(clippy::option_if_let_else)]
+        if let Ok(ref_mut) = self.try_alloc_slice_clone(value) {
+            ref_mut
+        } else {
+            oom();
+        }
+    }
+
+    /// Try to allocate an object in this allocator and return an exclusive
     /// reference to it.
     ///
     /// # Errors
     ///
     /// Errors if reserving space for `T` fails.
     pub fn try_alloc<T>(&self, value: T) -> Result<&mut T, A::Error> {
-        let ptr: *mut T = if core::mem::needs_drop::<T>() {
+        let ptr: *mut T = if mem::needs_drop::<T>() {
             let raw =
                 self.try_alloc_layout_with_finalizer(Layout::new::<T>(), drop_finalizer::<T>, ())?;
             raw.cast()
@@ -253,7 +301,6 @@ where
 
         let header_non_null;
         let value_ptr;
-        let finalizer_data_ptr;
 
         unsafe {
             #[allow(clippy::cast_ptr_alignment)]
@@ -262,7 +309,7 @@ where
             header_ptr.write(header);
             header_non_null = NonNull::new_unchecked(header_ptr);
 
-            finalizer_data_ptr = ptr.wrapping_add(fd_offset).cast::<D>();
+            let finalizer_data_ptr = ptr.wrapping_add(fd_offset).cast::<D>();
             finalizer_data_ptr.write(finalizer_data);
 
             value_ptr = ptr.wrapping_add(data_offset);
@@ -292,15 +339,15 @@ where
     ///
     /// Fails if reserving space for the slice fails.
     pub fn try_alloc_slice_copy<T: Copy>(&self, slice: &[T]) -> Result<&mut [T], A::Error> {
-        debug_assert!(!core::mem::needs_drop::<T>());
+        debug_assert!(!mem::needs_drop::<T>());
 
         let len = slice.len();
         let ptr = self.allocator.try_alloc_layout(Layout::for_value(slice))?;
         let ptr: *mut T = ptr.cast().as_ptr();
 
         unsafe {
-            core::ptr::copy_nonoverlapping(slice.as_ptr(), ptr, len);
-            Ok(core::slice::from_raw_parts_mut(ptr, len))
+            ptr::copy_nonoverlapping(slice.as_ptr(), ptr, len);
+            Ok(slice::from_raw_parts_mut(ptr, len))
         }
     }
 
@@ -313,7 +360,7 @@ where
     pub fn try_alloc_slice_clone<T: Clone>(&self, slice: &[T]) -> Result<&mut [T], A::Error> {
         let len = slice.len();
 
-        if core::mem::needs_drop::<T>() {
+        if mem::needs_drop::<T>() {
             let finalizer = slice_drop_finalizer::<T>;
             let ptr =
                 self.try_alloc_layout_with_finalizer(Layout::for_value(slice), finalizer, len)?;
@@ -333,8 +380,8 @@ where
                     progress.set(progress.get() + 1);
                 }
 
-                core::mem::forget(guard);
-                Ok(core::slice::from_raw_parts_mut(ptr, len))
+                mem::forget(guard);
+                Ok(slice::from_raw_parts_mut(ptr, len))
             }
         } else {
             let ptr = self.allocator.try_alloc_layout(Layout::for_value(slice))?;
@@ -344,28 +391,9 @@ where
                 for (i, item) in slice.iter().enumerate() {
                     ptr.wrapping_add(i).write(item.clone());
                 }
-                Ok(core::slice::from_raw_parts_mut(ptr, len))
+                Ok(slice::from_raw_parts_mut(ptr, len))
             }
         }
-    }
-
-    /// Return a shared reference to the underlying allocator.
-    ///
-    /// Any object directly allocated with the allocator **will not be dropped**.
-    pub const fn allocator(&self) -> &A {
-        &self.allocator
-    }
-
-    /// Convert into the underlying allocator without dropping any allocated
-    /// droppable data.
-    ///
-    /// ⚠️ No drop will be done on any previous allocation of this Rodeo.
-    ///
-    /// N.B.: there is no direct memory leak, only indirect memory and resource leak.
-    pub fn into_allocator(self) -> A {
-        let alloc = unsafe { std::ptr::read(&self.allocator) };
-        std::mem::forget(self);
-        alloc
     }
 }
 
@@ -375,7 +403,7 @@ fn oom() -> ! {
     panic!("out of memory")
 }
 
-impl<A: ArenaAlloc> Drop for Rodeo<A> {
+impl<A> Drop for Rodeo<A> {
     fn drop(&mut self) {
         let mut current = self.last.get();
         while let Some(header) = current {
@@ -389,6 +417,7 @@ impl<A: ArenaAlloc> Drop for Rodeo<A> {
 #[doc = include_str!("../README.md")]
 extern "C" {}
 
+#[doc(hidden)]
 pub const HEADER_LAYOUT: Layout = Layout::new::<Header>();
 
 struct DropCallback<F: FnMut()>(F);
