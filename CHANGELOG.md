@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.2.0] - unreleased
+## [0.2.0]
 
 ### Bug Fixes
 
@@ -14,12 +14,13 @@ All notable changes to this project will be documented in this file.
 - Better tests
 - Add miri leak test
 - Improve README
+- Add `package.rust-version`
 
 ### Refactor
 
 - Better Github actions
 - **breaking**: Replace `leak_all` by `into_allocator` in `Rodeo`
-- Clean up tests
+- Clean up code and tests
 - Remove proptest
 
 ## [0.1.1] - 2022-11-18
