@@ -1,8 +1,8 @@
 # Rodeo
 
 [![Rust Docs](https://img.shields.io/docsrs/rodeo)](https://docs.rs/rodeo/)
-[![Rust Build Status](https://img.shields.io/github/workflow/status/polazarus/rodeo/rust)](https://github.com/polazarus/rodeo/actions/workflows/rust.yml)
-[![Rust Nightly Build Status](https://img.shields.io/github/workflow/status/polazarus/rodeo/rust-nightly?label=nightly+build)](https://github.com/polazarus/rodeo/actions/workflows/rust-nightly.yml)
+[![Rust Build Status](https://img.shields.io/github/actions/workflow/status/polazarus/rodeo/rust.yml?branch=master)](https://github.com/polazarus/rodeo/actions/workflows/rust.yml)
+[![Rust Nightly Build Status](https://img.shields.io/github/actions/workflow/status/polazarus/rodeo/rust-nightly.yml?branch=master&label=nightly+build)](https://github.com/polazarus/rodeo/actions/workflows/rust-nightly.yml)
 ![](https://img.shields.io/crates/l/rodeo)
 
 **A dropping untyped arena** based on [bumpalo](https://crates.io/crates/bumpalo):
