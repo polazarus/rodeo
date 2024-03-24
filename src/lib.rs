@@ -200,7 +200,7 @@ where
     /// # Panics
     ///
     /// Panics if reserving space for `T` (and possibly an header) fails.
-    pub fn alloc<T>(&self, value: T) -> &mut T {
+    pub fn alloc<T: 'static>(&self, value: T) -> &mut T {
         #[allow(clippy::option_if_let_else)]
         if let Ok(ref_mut) = self.try_alloc(value) {
             ref_mut
@@ -230,7 +230,7 @@ where
     /// # Panics
     ///
     /// Panics if reserving space for the slice fails.
-    pub fn alloc_slice_copy<T: Copy>(&self, value: &[T]) -> &mut [T] {
+    pub fn alloc_slice_copy<T: Copy + 'static>(&self, value: &[T]) -> &mut [T] {
         #[allow(clippy::option_if_let_else)]
         if let Ok(ref_mut) = self.try_alloc_slice_copy(value) {
             ref_mut
@@ -245,7 +245,7 @@ where
     /// # Panics
     ///
     /// Panics if reserving space for the slice fails.
-    pub fn alloc_slice_clone<T: Clone>(&self, value: &[T]) -> &mut [T] {
+    pub fn alloc_slice_clone<T: Clone + 'static>(&self, value: &[T]) -> &mut [T] {
         #[allow(clippy::option_if_let_else)]
         if let Ok(ref_mut) = self.try_alloc_slice_clone(value) {
             ref_mut
@@ -260,7 +260,7 @@ where
     /// # Errors
     ///
     /// Errors if reserving space for `T` fails.
-    pub fn try_alloc<T>(&self, value: T) -> Result<&mut T, A::Error> {
+    pub fn try_alloc<T: 'static>(&self, value: T) -> Result<&mut T, A::Error> {
         let ptr: *mut T = if mem::needs_drop::<T>() {
             let raw =
                 self.try_alloc_layout_with_finalizer(Layout::new::<T>(), drop_finalizer::<T>, ())?;

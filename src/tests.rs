@@ -1,5 +1,6 @@
 //! Main tests of [`Rodeo`]
 
+use alloc::rc::Rc;
 use alloc::vec::Vec;
 use core::cell::RefCell;
 
@@ -20,10 +21,11 @@ fn test_no_mem() {
     let rodeo = Rodeo::with_allocator(FailingAlloc);
     assert!(rodeo.try_alloc(42).is_err());
 
-    let witness = Cell::new(false);
+    let witness = Rc::new(Cell::new(false));
+    let witness1 = witness.clone();
     assert!(rodeo
-        .try_alloc(DropCallback(|| {
-            witness.set(true);
+        .try_alloc(DropCallback(move || {
+            witness1.set(true);
         }))
         .is_err());
     assert!(witness.get());
@@ -42,14 +44,15 @@ fn test_no_mem_panic_drop() {
     let rodeo = Rodeo::with_allocator(FailingAlloc);
     assert!(rodeo.try_alloc(42).is_err());
 
-    let witness = Cell::new(false);
-    let _guard = DropCallback(|| {
+    let witness = Rc::new(Cell::new(false));
+    let witness1 = witness.clone();
+    let _guard = DropCallback(move || {
         // double panic if witness is not set
         assert!(witness.get());
     });
 
-    let _ = rodeo.alloc(DropCallback(|| {
-        witness.set(true);
+    let _ = rodeo.alloc(DropCallback(move || {
+        witness1.set(true);
     }));
 }
 
@@ -69,20 +72,25 @@ fn test_into_allocator() {
 
 #[test]
 fn test_into_allocator_drop_not_called() {
-    let witness = Cell::new(false);
+    let witness = Rc::new(Cell::new(false));
+    let witness1 = witness.clone();
     let rodeo = Rodeo::new();
-    rodeo.alloc(DropCallback(|| witness.set(true)));
+    let ptr: *mut _ = rodeo.alloc(DropCallback(move || witness1.set(true)));
     let _alloc = rodeo.into_allocator();
     assert!(!witness.get(), "drop should not be called");
+    unsafe {
+        ptr.drop_in_place();
+    }
 }
 
 #[test]
 fn test_drop() {
-    let witness = Cell::new(false);
+    let witness = Rc::new(Cell::new(false));
+    let witness1 = witness.clone();
     {
         let rodeo = Rodeo::new();
-        let _dcb = rodeo.alloc(DropCallback(|| {
-            witness.set(true);
+        let _dcb = rodeo.alloc(DropCallback(move || {
+            witness1.set(true);
         }));
         assert!(!witness.get());
     }
@@ -135,21 +143,34 @@ fn test_alloc_slice_clone_no_drop() {
 
 #[test]
 fn test_alloc_slice_clone_drop_leak() {
-    let witness = Cell::new(0);
-    let dc = DropCallback(|| witness.set(witness.get() + 1));
-    let array = [dc.clone(), dc.clone()];
+    let witness = Rc::new(Cell::new(0));
+    let witness1 = witness.clone();
+    let dc = DropCallback(move || witness1.set(witness1.get() + 1));
+    let array = [dc.clone(), dc];
+    let _dc1; // evasion, needed to get still the cleanup
+    let _dc2;
     {
         let rodeo = Rodeo::new();
-        rodeo.alloc_slice_clone(&array);
+        let slice = rodeo.alloc_slice_clone(&array);
+
+        unsafe {
+            // evades the two DCs out of the Rodeo, for final cleanup
+            _dc1 = core::ptr::read(&mut slice[0]);
+            _dc2 = core::ptr::read(&mut slice[1]);
+        }
         let _alloc = rodeo.into_allocator();
     }
     assert_eq!(witness.get(), 0);
+    assert_eq!(Rc::strong_count(&witness), 5);
+
+    // cleanup the evaded DCs.
 }
 
 #[test]
 fn test_alloc_slice_clone_drop() {
-    let witness = Cell::new(0);
-    let dc = DropCallback(|| witness.set(witness.get() + 1));
+    let witness = Rc::new(Cell::new(0));
+    let witness1 = witness.clone();
+    let dc = DropCallback(move || witness1.set(witness1.get() + 1));
     let array = [dc.clone(), dc.clone()];
     {
         let rodeo = Rodeo::new();
@@ -159,12 +180,11 @@ fn test_alloc_slice_clone_drop() {
 }
 
 fn check_alloc_drop_order(n: u8) {
-    let witness = RefCell::new(Vec::with_capacity(n as usize));
-
+    let witness = Rc::new(RefCell::new(Vec::with_capacity(n as usize)));
     {
         let rodeo = Rodeo::new();
         for i in 0..n {
-            let witness = &witness;
+            let witness = witness.clone();
             let _ = rodeo.alloc(DropCallback(move || {
                 witness.borrow_mut().push(i);
             }));
@@ -190,11 +210,11 @@ fn test_alloc_drop_order_100() {
 #[test]
 fn test_alloc_slice_drop_order() {
     let n = 10;
-    let witness = RefCell::new(Vec::with_capacity(n));
+    let witness = Rc::new(RefCell::new(Vec::with_capacity(n)));
 
     let objects: Vec<_> = (0..n)
         .map(|i| {
-            let witness = &witness;
+            let witness = witness.clone();
             DropCallback(move || {
                 witness.borrow_mut().push(i);
             })
