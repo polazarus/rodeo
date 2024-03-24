@@ -11,6 +11,12 @@
 * _untyped_: the same allocator object may be used to allocate **any type**, unlike [`typed_arena`](https://crates.io/crates/typed_arena)
 * _dropping_: any drop on the allocated data **will be called**, unlike [`bumpalo`](https://crates.io/crates/bumpalo)
 
+## ⚠️ Warning
+
+**Rodeo only supports owned types for now.**
+
+Thanks to [@TimNN](https://github.com/TimNN) and MIRI for pointing out my shortsightness.
+
 ## Example
 
 ```rust
@@ -55,7 +61,7 @@ As a memory management library, this code uses `unsafe` extensively. However, th
 Run the tests simply with:
 
 ```shell
-$ cargo test
+cargo test
 ```
 
 ### Miri
@@ -65,16 +71,16 @@ $ cargo test
 As of `miri 0.1.0 (c1a859b 2022-11-10)`, Rodeo's tests show no error or warning when run with Miri.
 
 ```shell
-$ rustup +nightly component add miri # if needed
-$ cargo +nightly miri test
-$ LEAK=1 cargo +nightly miri test # should leak two buffers
+rustup +nightly component add miri # if needed
+cargo +nightly miri test
+LEAK=1 cargo +nightly miri test # should leak two buffers
 ```
 
 ## To-Do
 
-- [ ] add generic DST allocation, hide behind feature pending stabilization of [Rust RFC 2580](https://rust-lang.github.io/rfcs/2580-ptr-meta.html)
+* [ ] add generic DST allocation, hide behind feature pending stabilization of [Rust RFC 2580](https://rust-lang.github.io/rfcs/2580-ptr-meta.html)
 
-- [ ] investigate `rodeo`'s use for self-referential structures
+* [ ] investigate `rodeo`'s use for self-referential structures
 
 ## License
 
