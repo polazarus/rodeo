@@ -2,23 +2,29 @@ name: rust-msrv
 
 on:
   push:
-    branches: [ "master" ]
+    branches: ["master"]
   pull_request:
-    branches: [ "master" ]
+    branches: ["master"]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-    - name: Install cargo-msrv
-      run: cargo install cargo-msrv
+      - name: install_rust
+        uses: dtolnay/rust-toolchain@stable
 
-    - name: Check msrv
-      run: cargo msrv verify
+      - name: Install cargo-msrv
+        run: cargo install cargo-msrv --all-features
+
+      - name: Check msrv
+        run: cargo msrv --output-format json verify -- cargo check
+
+      - name: run cargo msrv on verify failure
+        if: ${{ failure() }}
+        run: cargo msrv --output-format json -- cargo check
