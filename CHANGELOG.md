@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1]
+
+### Bug Fixes
+
+- Fix unsoundness issue [#1](https://github.com/polazarus/rodeo/issues/1)
+
 ## [0.2.0]
 
 ### Bug Fixes
