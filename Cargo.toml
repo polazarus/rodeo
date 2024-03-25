@@ -9,18 +9,18 @@ categories = ["memory-management", "rust-patterns", "no-std"]
 keywords = ["dropping", "arena", "allocation", "bumpalo"]
 readme = "./README.md"
 repository = "https://github.com/polazarus/rodeo"
-rust-version = "1.56.1"
+rust-version = "1.73.0"
 
 [features]
 default = ["bumpalo", "std"]
 std = []
 
 [dependencies]
-bumpalo = { version = "3.11.1", optional = true }
+bumpalo = { version = "3.15.4", optional = true }
 
 [dev-dependencies]
-criterion = "0.4.0"
-typed-arena = "2.0.1"
+criterion = "0.5.1"
+typed-arena = "2.0.2"
 
 [[bench]]
 name = "main"
