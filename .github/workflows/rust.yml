@@ -5,6 +5,8 @@ on:
     branches: [ "master" ]
   pull_request:
     branches: [ "master" ]
+  schedule:
+    - cron: "38 18 * * *"
 
 env:
   CARGO_TERM_COLOR: always
@@ -27,3 +29,35 @@ jobs:
 
     - name: Run tests
       run: cargo test --verbose
+
+  clippy:
+    name: Run Clippy
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install up-to-date toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
+
+      - name: Install required CLI tools (clippy-sarif and sarif-fmt)
+        run: cargo binstall clippy-sarif sarif-fmt
+
+      - name: Run Clippy
+        run: cargo clippy
+          --all-features
+          --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
+        continue-on-error: true
+
+      - name: Upload analysis results to GitHub
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: rust-clippy-results.sarif
+          category: Clippy
