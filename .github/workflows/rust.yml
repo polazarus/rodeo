@@ -44,11 +44,10 @@ jobs:
         with:
           components: clippy
 
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@main
-
       - name: Install required CLI tools (clippy-sarif and sarif-fmt)
-        run: cargo binstall clippy-sarif sarif-fmt
+        uses: taiki-e/install-action@v2
+        with:
+          tool: clippy-sarif, sarif-fmt
 
       - name: Run Clippy
         run: cargo clippy
