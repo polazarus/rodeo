@@ -13,28 +13,26 @@ env:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Install up-to-date toolchain
-      run: |
-        rustup self update
-        rustup toolchain update stable
+      uses: dtolnay/rust-toolchain@stable
 
     - name: Build
       run: cargo build --verbose
 
-    - name: Run tests
+    - name: Test
       run: cargo test --verbose
 
   clippy:
-    name: Run Clippy
     runs-on: ubuntu-latest
+
     permissions:
       security-events: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -60,3 +58,54 @@ jobs:
         with:
           sarif_file: rust-clippy-results.sarif
           category: Clippy
+
+  msrv:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install up-to-date Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-msrv
+        run: cargo install cargo-msrv --all-features
+
+      - name: Check msrv
+        run: cargo msrv --output-format json verify -- cargo check
+
+      - name: run cargo msrv on verify failure
+        if: ${{ failure() }}
+        run: cargo msrv --output-format json -- cargo check
+
+  build-nightly:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install up-to-date toolchain
+      uses: dtolnay/rust-toolchain@nightly
+
+    - name: Build
+      run: cargo build --verbose
+
+    - name: Test
+      run: cargo test --verbose
+
+  miri:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install up-to-date toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+
+      - name: Run Miri setup
+        run: cargo miri setup
+
+      - name: Run Miri
+        run: cargo miri test
